@@ -15,6 +15,10 @@ import com.intellij.ui.AnActionButton;
 import com.intellij.ui.TableSpeedSearch;
 import com.intellij.ui.ToolbarDecorator;
 import com.intellij.ui.table.JBTable;
+import com.microsoft.azure.toolkit.lib.common.operation.AzureOperationBundle;
+import com.microsoft.azure.toolkit.lib.common.operation.IAzureOperationTitle;
+import com.microsoft.azure.toolkit.lib.common.task.AzureTask;
+import com.microsoft.azure.toolkit.lib.common.task.AzureTaskManager;
 import com.microsoft.azuretools.authmanage.AuthMethodManager;
 import com.microsoft.azuretools.authmanage.SubscriptionManager;
 import com.microsoft.azuretools.authmanage.models.SubscriptionDetail;
@@ -29,6 +33,7 @@ import com.microsoft.intellij.ui.components.AzureDialogWrapper;
 import com.microsoft.intellij.util.PluginUtil;
 import com.microsoft.tooling.msservices.components.DefaultLoader;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -64,6 +69,8 @@ public class SubscriptionsDialog extends AzureDialogWrapper {
         setSubscriptions();
 
         init();
+
+        table.setAutoCreateRowSorter(true);
     }
 
     /**
@@ -103,10 +110,6 @@ public class SubscriptionsDialog extends AzureDialogWrapper {
             final SubscriptionManager subscriptionManager = manager.getSubscriptionManager();
             subscriptionManager.cleanSubscriptions();
 
-            DefaultTableModel dm = (DefaultTableModel) table.getModel();
-            dm.getDataVector().removeAllElements();
-            dm.fireTableDataChanged();
-
             SelectSubscriptionsAction.loadSubscriptions(subscriptionManager, project);
 
             //System.out.println("refreshSubscriptions: calling getSubscriptionDetails()");
@@ -124,6 +127,13 @@ public class SubscriptionsDialog extends AzureDialogWrapper {
 
     private void setSubscriptions() {
         DefaultTableModel model = (DefaultTableModel) table.getModel();
+        model.setRowCount(0);
+        sdl.sort((sub1, sub2) -> {
+            if (sub1.isSelected() != sub2.isSelected()) {
+                return sub1.isSelected() ? -1 : 0;
+            }
+            return StringUtils.compareIgnoreCase(sub1.getSubscriptionName(), sub2.getSubscriptionName());
+        });
         for (SubscriptionDetail sd : sdl) {
             model.addRow(new Object[]{sd.isSelected(), sd.getSubscriptionName(), sd.getSubscriptionId()});
         }
@@ -150,7 +160,9 @@ public class SubscriptionsDialog extends AzureDialogWrapper {
             @Override
             public void actionPerformed(AnActionEvent anActionEvent) {
                 AppInsightsClient.createByType(AppInsightsClient.EventType.Subscription, "", "Refresh", null);
-                refreshSubscriptions();
+                final IAzureOperationTitle title = AzureOperationBundle.title("account|subscription.refresh");
+                final AzureTask task = new AzureTask(project, title, true, SubscriptionsDialog.this::refreshSubscriptions, AzureTask.Modality.ANY);
+                AzureTaskManager.getInstance().runInBackground(task);
             }
         };
 
@@ -193,7 +205,8 @@ public class SubscriptionsDialog extends AzureDialogWrapper {
             this.sdl.get(ri).setSelected(selected);
         }
 
-        List<String> selectedIds = this.sdl.stream().filter(SubscriptionDetail::isSelected).map(SubscriptionDetail::getSubscriptionId).collect(Collectors.toList());
+        List<String> selectedIds = this.sdl.stream().filter(SubscriptionDetail::isSelected)
+                .map(SubscriptionDetail::getSubscriptionId).collect(Collectors.toList());
         IdentityAzureManager.getInstance().selectSubscriptionByIds(selectedIds);
 
         final Map<String, String> properties = new HashMap<>();
@@ -209,7 +222,7 @@ public class SubscriptionsDialog extends AzureDialogWrapper {
         return "SubscriptionsDialog";
     }
 
-    private class SubscriptionTableModel extends DefaultTableModel {
+    private static class SubscriptionTableModel extends DefaultTableModel {
         final Class[] columnClass = new Class[]{
             Boolean.class, String.class, String.class
         };
