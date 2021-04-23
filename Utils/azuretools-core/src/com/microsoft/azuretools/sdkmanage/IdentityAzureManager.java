@@ -127,7 +127,6 @@ public class IdentityAzureManager extends AzureManagerBase {
             }
 
         } catch (Throwable e) {
-            drop();
             return Mono.error(new AzureToolkitRuntimeException(String.format("Cannot restore credentials due to error: %s", e.getMessage())));
         }
     }
